@@ -1,0 +1,7 @@
+lock = thread.newrelock()
+print(lock:acquire())
+print(lock:acquire())
+lock:release()
+print(lock:acquire(1))
+lock:release()
+lock:release()

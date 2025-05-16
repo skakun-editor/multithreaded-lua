@@ -18,6 +18,7 @@ typedef struct CallInfo CallInfo;
 #include "ltm.h"
 #include "lzio.h"
 
+#include <pthread.h>
 
 /*
 ** Some notes about garbage-collected objects: All objects in Lua must
@@ -248,6 +249,16 @@ struct CallInfo {
 #define getoah(st)	((st) & CIST_OAH)
 
 
+typedef struct OSThread OSThread;
+struct OSThread {
+  pthread_t id;
+  pthread_mutex_t joinlock;
+  lu_byte joined; /* already joined before? */
+  ls_byte nrefs;  /* number of references held to this object */
+  OSThread *prev, *next;
+};
+
+
 /*
 ** 'global state', shared by all threads of this state
 */
@@ -300,6 +311,8 @@ typedef struct global_State {
   TString *strcache[STRCACHE_N][STRCACHE_M];  /* cache for strings in API */
   lua_WarnFunction warnf;  /* warning function */
   void *ud_warn;         /* auxiliary data to 'warnf' */
+  OSThread *osthreads;  /* doubly-linked list of OS threads to join in lua_close */
+  pthread_mutex_t osthreadslock;
 } global_State;
 
 
@@ -402,6 +415,8 @@ LUAI_FUNC void luaE_incCstack (lua_State *L);
 LUAI_FUNC void luaE_warning (lua_State *L, const char *msg, int tocont);
 LUAI_FUNC void luaE_warnerror (lua_State *L, const char *where);
 LUAI_FUNC int luaE_resetthread (lua_State *L, int status);
+LUAI_FUNC int luaE_joinosthread (lua_State *L, OSThread *t, const struct timespec *abstime);
+LUAI_FUNC void luaE_unrefosthread (lua_State *L, OSThread *t);
 
 
 #endif

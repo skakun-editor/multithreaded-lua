@@ -10,6 +10,8 @@
 #include "lprefix.h"
 
 
+#define _GNU_SOURCE
+#include <pthread.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -236,6 +238,7 @@ static void f_luaopen (lua_State *L, void *ud) {
   luaS_init(L);
   luaT_init(L);
   luaX_init(L);
+  pthread_mutex_init(&g->osthreadslock, NULL);
   g->gcstp = 0;  /* allow gc */
   setnilvalue(&g->nilvalue);  /* now state is complete */
   luai_userstateopen(L);
@@ -271,6 +274,19 @@ static void close_state (lua_State *L) {
   if (!completestate(g))  /* closing a partially built state? */
     luaC_freeallobjects(L);  /* just collect its objects */
   else {  /* closing a fully built state */
+    for (;;) { /* wait for all OS threads to finish */
+      pthread_mutex_lock(&g->osthreadslock);
+      OSThread *t = g->osthreads;
+      if (t == NULL) {
+        pthread_mutex_unlock(&g->osthreadslock);
+        break;
+      }
+      __sync_add_and_fetch(&t->nrefs, 1);
+      pthread_mutex_unlock(&g->osthreadslock);
+      luaE_joinosthread(L, t, NULL);
+      luaE_unrefosthread(L, t);
+    }
+    pthread_mutex_destroy(&g->osthreadslock);
     L->ci = &L->base_ci;  /* unwind CallInfo list */
     luaD_closeprotected(L, 1, LUA_OK);  /* close all upvalues */
     luaC_freeallobjects(L);  /* collect all objects */
@@ -404,6 +420,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   setgcparam(g->genmajormul, LUAI_GENMAJORMUL);
   g->genminormul = LUAI_GENMINORMUL;
   for (i=0; i < LUA_NUMTAGS; i++) g->mt[i] = NULL;
+  g->osthreads = NULL;
   if (luaD_rawrunprotected(L, f_luaopen, NULL) != LUA_OK) {
     /* memory allocation error: free partial state */
     close_state(L);
@@ -443,3 +460,50 @@ void luaE_warnerror (lua_State *L, const char *where) {
   luaE_warning(L, ")", 0);
 }
 
+
+int luaE_joinosthread (lua_State *L, OSThread *t, const struct timespec *abstime) {
+  int err;
+  if (abstime == NULL) { /* no timeout */
+    pthread_mutex_lock(&t->joinlock);
+    if (t->joined) {
+      pthread_mutex_unlock(&t->joinlock);
+      return 0;
+    }
+    err = pthread_join(t->id, NULL);
+  }
+  else { /* with timeout */
+    err = pthread_mutex_timedlock(&t->joinlock, abstime);
+    if (err != 0)
+      return err;
+    if (t->joined) {
+      pthread_mutex_unlock(&t->joinlock);
+      return 0;
+    }
+    err = pthread_timedjoin_np(t->id, NULL, abstime);
+  }
+  if (err == 0) /* we successfully joined the thread now */
+    t->joined = 1;
+  pthread_mutex_unlock(&t->joinlock);
+  if (err != 0) /* join failed */
+    return err;
+  global_State *g = G(L); /* remove thread from global join queue */
+  pthread_mutex_lock(&g->osthreadslock);
+  if (t->prev != NULL)
+    t->prev->next = t->next;
+  else
+    g->osthreads = t->next;
+  if (t->next != NULL)
+    t->next->prev = t->prev;
+  t->prev = t->next = NULL;
+  pthread_mutex_unlock(&g->osthreadslock);
+  luaE_unrefosthread(L, t);
+  return 0;
+}
+
+void luaE_unrefosthread (lua_State *L, OSThread *t) {
+  if (__sync_sub_and_fetch(&t->nrefs, 1) == 0) {
+    lua_assert(t->prev == NULL && t->next == NULL);
+    pthread_mutex_destroy(&t->joinlock);
+    luaM_free(L, t);
+  }
+}
