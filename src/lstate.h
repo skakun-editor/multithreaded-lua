@@ -313,6 +313,7 @@ typedef struct global_State {
   void *ud_warn;         /* auxiliary data to 'warnf' */
   OSThread *osthreads;  /* doubly-linked list of OS threads to join in lua_close */
   pthread_mutex_t osthreadslock;
+  pthread_mutex_t gil;  /* global interpreter lock */
 } global_State;
 
 

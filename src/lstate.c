@@ -239,6 +239,7 @@ static void f_luaopen (lua_State *L, void *ud) {
   luaT_init(L);
   luaX_init(L);
   pthread_mutex_init(&g->osthreadslock, NULL);
+  pthread_mutex_init(&g->gil, NULL);
   g->gcstp = 0;  /* allow gc */
   setnilvalue(&g->nilvalue);  /* now state is complete */
   luai_userstateopen(L);
@@ -274,7 +275,8 @@ static void close_state (lua_State *L) {
   if (!completestate(g))  /* closing a partially built state? */
     luaC_freeallobjects(L);  /* just collect its objects */
   else {  /* closing a fully built state */
-    for (;;) { /* wait for all OS threads to finish */
+    lua_unlock(L); /* wait for all OS threads to finish */
+    for (;;) {
       pthread_mutex_lock(&g->osthreadslock);
       OSThread *t = g->osthreads;
       if (t == NULL) {
@@ -291,6 +293,7 @@ static void close_state (lua_State *L) {
     luaD_closeprotected(L, 1, LUA_OK);  /* close all upvalues */
     luaC_freeallobjects(L);  /* collect all objects */
     luai_userstateclose(L);
+    pthread_mutex_destroy(&g->gil);
   }
   luaM_freearray(L, G(L)->strt.hash, G(L)->strt.size);
   freestack(L);
@@ -473,12 +476,13 @@ int luaE_joinosthread (lua_State *L, OSThread *t, const struct timespec *abstime
   }
   else { /* with timeout */
     err = pthread_mutex_timedlock(&t->joinlock, abstime);
-    if (err != 0)
-      return err;
     if (t->joined) {
-      pthread_mutex_unlock(&t->joinlock);
+      if (err == 0)
+        pthread_mutex_unlock(&t->joinlock);
       return 0;
     }
+    if (err != 0)
+      return err;
     err = pthread_timedjoin_np(t->id, NULL, abstime);
   }
   if (err == 0) /* we successfully joined the thread now */
