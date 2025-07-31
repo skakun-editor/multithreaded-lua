@@ -9,7 +9,7 @@
 #undef vmcase
 #undef vmbreak
 
-#define vmdispatch(x)     goto *disptab[x];
+#define vmdispatch(x)     vmlog(x); goto *disptab[x];
 
 #define vmcase(l)     L_##l:
 

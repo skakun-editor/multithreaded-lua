@@ -1143,7 +1143,15 @@ void luaV_finishOp (lua_State *L) {
   i = *(pc++); \
 }
 
-#define vmdispatch(o)	switch(o)
+/* low-level instruction tracing for debugging Lua */
+#if 0
+#include "lopnames.h"
+#define vmlog(o) fprintf(stderr, "lua: %s\n", opnames[o])
+#else
+#define vmlog(o) ((void)0)
+#endif
+
+#define vmdispatch(o)	vmlog(o); switch(o)
 #define vmcase(l)	case l:
 #define vmbreak		break
 
@@ -1172,7 +1180,9 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
     vmfetch();
     #if 0
       /* low-level line tracing for debugging Lua */
-      printf("line: %d\n", luaG_getfuncline(cl->p, pcRel(pc, cl->p)));
+      char chunkid[LUA_IDSIZE];
+      luaO_chunkid(chunkid, getstr(cl->p->source), tsslen(cl->p->source));
+      fprintf(stderr, "lua: line %3d in %.*s\n", luaG_getfuncline(cl->p, pcRel(pc, cl->p)), LUA_IDSIZE, chunkid);
     #endif
     lua_assert(base == ci->func.p + 1);
     lua_assert(base <= L->top.p && L->top.p <= L->stack_last.p);

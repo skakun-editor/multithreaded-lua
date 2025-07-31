@@ -11,6 +11,7 @@
 
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -656,6 +657,8 @@ LUALIB_API char *luaL_buffinitsize (lua_State *L, luaL_Buffer *B, size_t sz) {
 /* index of free-list header (after the predefined values) */
 #define freelist	(LUA_RIDX_LAST + 1)
 
+pthread_mutex_t freelistlock = PTHREAD_MUTEX_INITIALIZER;
+
 /*
 ** The previously freed references form a linked list:
 ** t[freelist] is the index of a first free index, or zero if list is
@@ -668,6 +671,7 @@ LUALIB_API int luaL_ref (lua_State *L, int t) {
     return LUA_REFNIL;  /* 'nil' has a unique fixed reference */
   }
   t = lua_absindex(L, t);
+  pthread_mutex_lock(&freelistlock);
   if (lua_rawgeti(L, t, freelist) == LUA_TNIL) {  /* first access? */
     ref = 0;  /* list is empty */
     lua_pushinteger(L, 0);  /* initialize as an empty list */
@@ -685,6 +689,7 @@ LUALIB_API int luaL_ref (lua_State *L, int t) {
   else  /* no free elements */
     ref = (int)lua_rawlen(L, t) + 1;  /* get a new reference */
   lua_rawseti(L, t, ref);
+  pthread_mutex_unlock(&freelistlock);
   return ref;
 }
 
@@ -692,11 +697,13 @@ LUALIB_API int luaL_ref (lua_State *L, int t) {
 LUALIB_API void luaL_unref (lua_State *L, int t, int ref) {
   if (ref >= 0) {
     t = lua_absindex(L, t);
+    pthread_mutex_lock(&freelistlock);
     lua_rawgeti(L, t, freelist);
     lua_assert(lua_isinteger(L, -1));
     lua_rawseti(L, t, ref);  /* t[ref] = t[freelist] */
     lua_pushinteger(L, ref);
     lua_rawseti(L, t, freelist);  /* t[freelist] = ref */
+    pthread_mutex_unlock(&freelistlock);
   }
 }
 
