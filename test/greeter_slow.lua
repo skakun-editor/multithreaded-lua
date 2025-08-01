@@ -1,7 +1,7 @@
 function greeter(name)
   while true do
     io.write('Hello, ', name, '!\n')
-    os.execute('sleep 0.1')
+    thread.sleep(0.1)
   end
 end
 

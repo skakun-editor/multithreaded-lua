@@ -13,6 +13,7 @@
 #include <errno.h>
 #include <math.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "lua.h"
 
@@ -154,6 +155,17 @@ static int new (lua_State *L) {
   return 1;
 }
 
+static int sleep_ (lua_State *L) {
+  useconds_t micros;
+  if (lua_isinteger(L, 1)) /* duration is integer */
+    micros = 1000000 * (useconds_t)lua_tointeger(L, 1);
+  else { /* duration is float */
+    micros = 1e6 * luaL_checknumber(L, 1);
+  }
+  usleep(micros);
+  return 0;
+}
+
 static int newlock (lua_State *L) {
   pthread_mutex_t *p = lua_newuserdatauv(L, sizeof(pthread_mutex_t), 0);
   luaL_setmetatable(L, "lock");
@@ -174,6 +186,7 @@ static int newrelock (lua_State *L) {
 
 static const luaL_Reg thrlib[] = {
   {"new", new},
+  {"sleep", sleep_},
   {"newlock", newlock},
   {"newrelock", newrelock},
   {NULL, NULL}
