@@ -1130,12 +1130,22 @@ void luaV_finishOp (lua_State *L) {
 /* 'c' is the limit of live values in the stack */
 #define checkGC(L,c)  \
 	{ luaC_condGC(L, (savepc(L), L->top.p = (c)), \
-                         updatetrap(ci)); \
-           luai_threadyield(L); }
+                         updatetrap(ci)); }
 
+/* yield the GIL to another OS thread, if enough time has passed */
+#define vmyield()	{ \
+  struct timespec now; \
+  clock_gettime(CLOCK_MONOTONIC, &now); \
+  long elapsed_micros = 1000000 * (long)(now.tv_sec - lastyield.tv_sec) + (now.tv_nsec - lastyield.tv_nsec) / 1000; \
+  if (elapsed_micros > LUA_YIELDINTERVAL) { \
+    luai_threadyield(L); \
+    clock_gettime(CLOCK_MONOTONIC, &lastyield); \
+  } \
+}
 
 /* fetch an instruction and prepare its execution */
 #define vmfetch()	{ \
+  vmyield(); \
   if (l_unlikely(trap)) {  /* stack reallocation or hooks? */ \
     trap = luaG_traceexec(L, pc);  /* handle hooks */ \
     updatebase(ci);  /* correct stack */ \
@@ -1162,9 +1172,11 @@ void luaV_execute (lua_State *L, CallInfo *ci) {
   StkId base;
   const Instruction *pc;
   int trap;
+  struct timespec lastyield;
 #if LUA_USE_JUMPTABLE
 #include "ljumptab.h"
 #endif
+  clock_gettime(CLOCK_MONOTONIC, &lastyield);
  startfunc:
   trap = L->hookmask;
  returning:  /* trap already set */

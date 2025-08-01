@@ -314,6 +314,8 @@ typedef struct global_State {
   OSThread *osthreads;  /* doubly-linked list of OS threads to join in lua_close */
   pthread_mutex_t osthreadslock;
   pthread_mutex_t gil;  /* global interpreter lock */
+  int nwaitingforgil; /* number of OS threads waiting to acquire GIL */
+  pthread_cond_t gilacquired; /* condition variable to signal a successful thread switch */
 } global_State;
 
 

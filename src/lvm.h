@@ -36,6 +36,8 @@
 #define LUA_FLOORN2I		F2Ieq
 #endif
 
+/* how long in microseconds a thread is allowed to continuously hold the GIL, inhibiting the execution of other OS threads */
+#define LUA_YIELDINTERVAL 1000
 
 /*
 ** Rounding modes for float->integer coercion

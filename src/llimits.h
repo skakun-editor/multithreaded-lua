@@ -261,7 +261,13 @@ typedef l_uint32 Instruction;
 ** ('lua_lock') and leaves the core ('lua_unlock')
 */
 #if !defined(lua_lock)
-#define lua_lock(L)	pthread_mutex_lock(&G(L)->gil)
+#define lua_lock(L)	{ \
+  global_State *g = G(L); \
+  __sync_add_and_fetch(&g->nwaitingforgil, 1); \
+  pthread_mutex_lock(&g->gil); \
+  __sync_sub_and_fetch(&g->nwaitingforgil, 1); \
+  pthread_cond_broadcast(&g->gilacquired); \
+}
 #define lua_unlock(L)	pthread_mutex_unlock(&G(L)->gil)
 #endif
 
@@ -270,7 +276,15 @@ typedef l_uint32 Instruction;
 ** function can yield.
 */
 #if !defined(luai_threadyield)
-#define luai_threadyield(L)	{lua_unlock(L); lua_lock(L);}
+#define luai_threadyield(L)	{ \
+  global_State *g = G(L); \
+  if (__sync_add_and_fetch(&g->nwaitingforgil, 0) > 0) { \
+    __sync_add_and_fetch(&g->nwaitingforgil, 1); \
+    pthread_cond_wait(&g->gilacquired, &g->gil); \
+    __sync_sub_and_fetch(&g->nwaitingforgil, 1); \
+    pthread_cond_broadcast(&g->gilacquired); \
+  } \
+}
 #endif
 
 

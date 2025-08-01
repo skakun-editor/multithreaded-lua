@@ -240,6 +240,7 @@ static void f_luaopen (lua_State *L, void *ud) {
   luaX_init(L);
   pthread_mutex_init(&g->osthreadslock, NULL);
   pthread_mutex_init(&g->gil, NULL);
+  pthread_cond_init(&g->gilacquired, NULL);
   g->gcstp = 0;  /* allow gc */
   setnilvalue(&g->nilvalue);  /* now state is complete */
   luai_userstateopen(L);
@@ -293,6 +294,7 @@ static void close_state (lua_State *L) {
     luaD_closeprotected(L, 1, LUA_OK);  /* close all upvalues */
     luaC_freeallobjects(L);  /* collect all objects */
     luai_userstateclose(L);
+    pthread_cond_destroy(&g->gilacquired);
     pthread_mutex_destroy(&g->gil);
   }
   luaM_freearray(L, G(L)->strt.hash, G(L)->strt.size);
@@ -424,6 +426,7 @@ LUA_API lua_State *lua_newstate (lua_Alloc f, void *ud) {
   g->genminormul = LUAI_GENMINORMUL;
   for (i=0; i < LUA_NUMTAGS; i++) g->mt[i] = NULL;
   g->osthreads = NULL;
+  g->nwaitingforgil = 0;
   if (luaD_rawrunprotected(L, f_luaopen, NULL) != LUA_OK) {
     /* memory allocation error: free partial state */
     close_state(L);
