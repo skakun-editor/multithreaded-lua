@@ -1,9 +1,8 @@
 lock = thread.newlock()
 function greeter(name)
   while true do
-    lock:acquire()
+    local lock <close> = lock:acquire()
     io.write('Hello, ', name, '!\n')
-    lock:release()
   end
 end
 

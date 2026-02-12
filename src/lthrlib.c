@@ -45,10 +45,13 @@ static struct timespec timeout2abstime (lua_State *L, int idx) {
   return ts;
 }
 
-static int handle_timed_op_err (lua_State *L, int err) {
+static int handle_timed_op_err (lua_State *L, int err, int successvalueidx) {
   switch (err) {
     case 0:
-      lua_pushboolean(L, 1);
+      if (successvalueidx == -1)
+        lua_pushboolean(L, 1);
+      else
+        lua_pushvalue(L, successvalueidx);
       return 1;
     case ETIMEDOUT:
       luaL_pushfail(L);
@@ -69,7 +72,7 @@ static int thread_join (lua_State *L) {
     struct timespec ts = timeout2abstime(L, 2);
     err = luaE_joinosthread(L, p, &ts);
   }
-  return handle_timed_op_err(L, err);
+  return handle_timed_op_err(L, err, -1);
 }
 
 static int thread_gc (lua_State *L) {
@@ -95,7 +98,7 @@ static int lock_acquire (lua_State *L) {
     struct timespec ts = timeout2abstime(L, 2);
     err = pthread_mutex_timedlock(p, &ts);
   }
-  return handle_timed_op_err(L, err);
+  return handle_timed_op_err(L, err, 1);
 }
 
 static int lock_release (lua_State *L) {
@@ -115,6 +118,7 @@ static int lock_gc (lua_State *L) {
 static const luaL_Reg lockmeth[] = {
   {"acquire", lock_acquire},
   {"release", lock_release},
+  {"__close", lock_release},
   {"__gc", lock_gc},
   {NULL, NULL}
 };
